@@ -1,0 +1,14 @@
+{
+  "project_name": "AI-Driven Vehicle Price Valuation",
+  "target": "price",
+  "currency": "LKR",
+  "features": [
+    {"name": "brand", "label": "Brand", "type": "select", "options": ["Toyota", "Honda", "Nissan", "Suzuki", "Mitsubishi", "Mazda", "BMW", "Mercedes-Benz", "Audi", "Other"], "encoding": {"Toyota": 0, "Honda": 1, "Nissan": 2, "Suzuki": 3, "Mitsubishi": 4, "Mazda": 5, "BMW": 6, "Mercedes-Benz": 7, "Audi": 8, "Other": 9}, "required": true},
+    {"name": "model_year", "label": "Model Year", "type": "number", "min": 1990, "max": 2026, "step": 1, "required": true},
+    {"name": "mileage", "label": "Mileage (km)", "type": "number", "min": 0, "max": 500000, "step": 1000, "required": true},
+    {"name": "engine_capacity", "label": "Engine Capacity (cc)", "type": "number", "min": 600, "max": 6000, "step": 50, "required": true},
+    {"name": "fuel_type", "label": "Fuel Type", "type": "select", "options": ["Petrol", "Diesel", "Hybrid", "Electric"], "encoding": {"Petrol": 0, "Diesel": 1, "Hybrid": 2, "Electric": 3}, "required": true},
+    {"name": "transmission", "label": "Transmission", "type": "select", "options": ["Automatic", "Manual"], "encoding": {"Automatic": 0, "Manual": 1}, "required": true},
+    {"name": "condition", "label": "Condition", "type": "select", "options": ["Excellent", "Good", "Fair"], "encoding": {"Excellent": 2, "Good": 1, "Fair": 0}, "required": true}
+  ]
+}

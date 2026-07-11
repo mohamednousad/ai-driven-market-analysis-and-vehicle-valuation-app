@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.vscode/
+.idea/
+web/storage/uploads/*
+!web/storage/uploads/.gitkeep
+.DS_Store
+Thumbs.db
