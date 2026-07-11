@@ -37,7 +37,7 @@ vehicle-app/
 
 ## 1. Database
 
-Import the schema (creates the `autovalue_ai` database, tables and seed data):
+Import the schema (creates the `autovalue` database, tables and seed data):
 
 ```
 mysql -u root -p < database/schema.sql

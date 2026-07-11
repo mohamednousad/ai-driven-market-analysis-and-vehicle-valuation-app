@@ -1,5 +1,5 @@
-CREATE DATABASE IF NOT EXISTS autovalue_ai CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE autovalue_ai;
+CREATE DATABASE IF NOT EXISTS autovalue CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE autovalue;
 
 DROP TABLE IF EXISTS seller_ratings;
 DROP TABLE IF EXISTS chat_messages;

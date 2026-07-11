@@ -7,7 +7,7 @@ define('APP_NAME', 'AutoValue AI');
 define('APP_TAGLINE', 'AI-Driven Vehicle Marketplace');
 
 define('DB_HOST', '127.0.0.1');
-define('DB_NAME', 'autovalue_ai');
+define('DB_NAME', 'autovalue');
 define('DB_USER', 'root');
 define('DB_PASS', '');
 
