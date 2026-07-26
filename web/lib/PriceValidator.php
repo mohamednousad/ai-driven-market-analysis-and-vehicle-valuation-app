@@ -1,51 +1,26 @@
 <?php
 class PriceValidator
 {
-    private PredictionApi $api;
-    private float $bandPercent;
-
-    public function __construct(PredictionApi $api, float $bandPercent)
+    public function classify(float $submitted, array $prediction): string
     {
-        $this->api = $api;
-        $this->bandPercent = $bandPercent;
+        if ($submitted > (float)$prediction['upper_bound']) {
+            return 'overpriced';
+        }
+        if ($submitted < (float)$prediction['lower_bound']) {
+            return 'underpriced';
+        }
+        return 'fair';
     }
 
-    public function evaluate(array $inputs, float $askingPrice): array
+    public function message(string $result, array $prediction): string
     {
-        $response = $this->api->predict($inputs);
-        if (($response['success'] ?? false) !== true) {
-            return [
-                'ok' => false,
-                'message' => $response['message'] ?? 'Prediction failed.',
-            ];
+        $range = money((float)$prediction['lower_bound']) . ' - ' . money((float)$prediction['upper_bound']);
+        if ($result === 'overpriced') {
+            return 'Your asking price is above the AI fair range (' . $range . '). Lower the price to publish.';
         }
-
-        $predicted = (float)($response['prediction']['predicted_price'] ?? 0);
-        if ($predicted <= 0) {
-            return ['ok' => false, 'message' => 'The AI model returned an invalid price estimate.'];
+        if ($result === 'underpriced') {
+            return 'Your asking price is below the AI fair range (' . $range . '). Raise the price to publish.';
         }
-
-        $band = $this->bandPercent / 100;
-        $lower = $predicted * (1 - $band);
-        $upper = $predicted * (1 + $band);
-        $fair = ($askingPrice >= $lower && $askingPrice <= $upper);
-
-        $verdict = 'fair';
-        if ($askingPrice > $upper) {
-            $verdict = 'overpriced';
-        } elseif ($askingPrice < $lower) {
-            $verdict = 'underpriced';
-        }
-
-        return [
-            'ok' => true,
-            'fair' => $fair,
-            'verdict' => $verdict,
-            'predicted_price' => round($predicted, 2),
-            'lower_bound' => round($lower, 2),
-            'upper_bound' => round($upper, 2),
-            'band_percent' => $this->bandPercent,
-            'asking_price' => $askingPrice,
-        ];
+        return 'Your price is within the AI fair range (' . $range . ').';
     }
 }

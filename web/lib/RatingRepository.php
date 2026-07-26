@@ -8,49 +8,47 @@ class RatingRepository
         $this->pdo = $pdo;
     }
 
-    public function rate(int $sellerId, int $buyerId, int $adId, int $rating, string $comment): array
+    public function rate(int $adId, int $sellerId, int $buyerId, int $rating, string $comment): bool
     {
         if ($rating < 1 || $rating > 5) {
-            return ['success' => false, 'message' => 'Rating must be between 1 and 5 stars.'];
+            return false;
         }
-        if ($sellerId === $buyerId) {
-            return ['success' => false, 'message' => 'You cannot rate your own account.'];
-        }
-        try {
-            $stmt = $this->pdo->prepare(
-                'INSERT INTO seller_ratings (seller_id, buyer_id, ad_id, rating, comment)
-                 VALUES (?, ?, ?, ?, ?)
-                 ON DUPLICATE KEY UPDATE rating = VALUES(rating), comment = VALUES(comment)'
-            );
-            $stmt->execute([$sellerId, $buyerId, $adId, $rating, $comment]);
-            return ['success' => true, 'message' => 'Thank you, your rating has been saved.'];
-        } catch (PDOException $e) {
-            return ['success' => false, 'message' => 'Unable to save your rating right now.'];
-        }
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO buyer_seller_ratings (ad_id, seller_id, buyer_id, rating, comment)
+             VALUES (?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE rating = VALUES(rating), comment = VALUES(comment)'
+        );
+        $stmt->execute([$adId, $sellerId, $buyerId, $rating, $comment]);
+        return true;
     }
 
-    public function summary(int $sellerId): array
+    public function sellerSummary(int $sellerId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT AVG(rating) AS avg_rating, COUNT(*) AS rating_count
-             FROM seller_ratings WHERE seller_id = ?'
+            'SELECT COUNT(*) AS total, COALESCE(AVG(rating), 0) AS average
+             FROM buyer_seller_ratings WHERE seller_id = ?'
         );
         $stmt->execute([$sellerId]);
         $row = $stmt->fetch();
-        return [
-            'avg_rating' => (float)($row['avg_rating'] ?? 0),
-            'rating_count' => (int)($row['rating_count'] ?? 0),
-        ];
+        return ['total' => (int)$row['total'], 'average' => round((float)$row['average'], 1)];
     }
 
-    public function forSeller(int $sellerId): array
+    public function forAdByBuyer(int $adId, int $buyerId): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT sr.*, u.full_name AS buyer_name
-             FROM seller_ratings sr
-             JOIN users u ON u.id = sr.buyer_id
-             WHERE sr.seller_id = ?
-             ORDER BY sr.created_at DESC'
+            'SELECT * FROM buyer_seller_ratings WHERE ad_id = ? AND buyer_id = ? LIMIT 1'
+        );
+        $stmt->execute([$adId, $buyerId]);
+        $row = $stmt->fetch();
+        return $row ?: null;
+    }
+
+    public function recentForSeller(int $sellerId, int $limit = 5): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT r.rating, r.comment, r.created_at, u.full_name AS buyer_name
+             FROM buyer_seller_ratings r JOIN users u ON u.user_id = r.buyer_id
+             WHERE r.seller_id = ? ORDER BY r.created_at DESC LIMIT ' . (int)$limit
         );
         $stmt->execute([$sellerId]);
         return $stmt->fetchAll();

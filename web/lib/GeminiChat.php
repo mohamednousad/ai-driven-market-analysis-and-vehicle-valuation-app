@@ -4,7 +4,7 @@ class GeminiChat
     private string $apiKey;
     private string $model;
 
-    public function __construct(string $apiKey, string $model = 'gemini-1.5-flash')
+    public function __construct(string $apiKey = GEMINI_API_KEY, string $model = GEMINI_MODEL)
     {
         $this->apiKey = $apiKey;
         $this->model = $model;
@@ -12,62 +12,53 @@ class GeminiChat
 
     public function isConfigured(): bool
     {
-        return trim($this->apiKey) !== '';
+        return $this->apiKey !== '';
     }
 
-    public function ask(string $message, array $history = []): array
+    public function ask(array $history, string $userMessage): array
     {
         if (!$this->isConfigured()) {
-            return [
-                'success' => false,
-                'message' => 'The AI assistant is not configured yet. An administrator can add a Gemini API key in Settings.',
-            ];
+            return ['success' => false, 'message' => 'Assistant is not configured. Add GEMINI_API_KEY in web/config/config.php.'];
         }
 
-        $systemPrompt = 'You are a helpful vehicle-buying assistant for a Sri Lankan used-vehicle marketplace. '
-            . 'Help buyers by asking about their budget, preferred brand, body type, mileage and fuel type, then '
-            . 'summarise a clear vehicle search plan. Keep answers short, friendly and practical. Prices are in LKR. '
-            . 'Give data-backed guidance only. Never give legal or financial guarantees, and remind buyers that '
-            . 'final decisions need a physical inspection.';
+        $system = 'You are AutoValue Assistant, a helpful vehicle buying guide for the Sri Lankan used car market. '
+            . 'Ask short clarification questions about budget (in Rs), preferred brand, model, fuel type, transmission and mileage, '
+            . 'then summarise a clear search plan. Be neutral and never give financial or legal guarantees.';
 
         $contents = [];
         foreach ($history as $turn) {
-            $role = ($turn['role'] ?? 'user') === 'assistant' ? 'model' : 'user';
             $contents[] = [
-                'role' => $role,
-                'parts' => [['text' => (string)($turn['text'] ?? '')]],
+                'role' => $turn['role'] === 'user' ? 'user' : 'model',
+                'parts' => [['text' => $turn['text']]],
             ];
         }
-        $contents[] = ['role' => 'user', 'parts' => [['text' => $message]]];
+        $contents[] = ['role' => 'user', 'parts' => [['text' => $userMessage]]];
 
-        $payload = [
-            'system_instruction' => ['parts' => [['text' => $systemPrompt]]],
-            'contents' => $contents,
-            'generationConfig' => ['temperature' => 0.6, 'maxOutputTokens' => 512],
-        ];
-
-        $url = 'https://generativelanguage.googleapis.com/v1beta/models/'
-            . rawurlencode($this->model) . ':generateContent?key=' . rawurlencode($this->apiKey);
+        $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . urlencode($this->model)
+            . ':generateContent?key=' . urlencode($this->apiKey);
 
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, 30);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
+            'system_instruction' => ['parts' => [['text' => $system]]],
+            'contents' => $contents,
+        ]));
         $response = curl_exec($ch);
         $error = curl_error($ch);
         curl_close($ch);
 
-        if ($error) {
-            return ['success' => false, 'message' => 'Unable to reach the AI assistant right now.'];
+        if ($error !== '') {
+            return ['success' => false, 'message' => 'Could not reach the assistant. Check your internet connection.'];
         }
-        $decoded = json_decode($response, true);
-        $text = $decoded['candidates'][0]['content']['parts'][0]['text'] ?? '';
-        if ($text === '') {
-            $apiMessage = $decoded['error']['message'] ?? 'The AI assistant returned an empty response.';
+        $decoded = json_decode((string)$response, true);
+        $text = $decoded['candidates'][0]['content']['parts'][0]['text'] ?? null;
+        if ($text === null) {
+            $apiMessage = $decoded['error']['message'] ?? 'Assistant returned an unexpected response.';
             return ['success' => false, 'message' => $apiMessage];
         }
-        return ['success' => true, 'reply' => trim($text)];
+        return ['success' => true, 'text' => $text];
     }
 }

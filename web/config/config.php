@@ -1,37 +1,29 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-define('APP_NAME', 'AutoValue AI');
+define('APP_NAME', 'AutoValue');
 define('APP_TAGLINE', 'AI-Driven Vehicle Marketplace');
 
 define('DB_HOST', '127.0.0.1');
-define('DB_NAME', 'autovalue');
+define('DB_NAME', 'Database operationsautovalue3');
 define('DB_USER', 'root');
 define('DB_PASS', '');
 
 define('AI_API_BASE_URL', 'http://127.0.0.1:5000');
+define('GEMINI_API_KEY', '');
+define('GEMINI_MODEL', 'gemini-1.5-flash');
 
-define('ROLE_ADMIN', 'admin');
-define('ROLE_SELLER', 'seller');
-define('ROLE_BUYER', 'buyer');
+define('CURRENCY_SYMBOL', 'Rs');
+define('ADS_PER_PAGE', 10);
+define('AD_LIFETIME_DAYS', 30);
+define('MAX_IMAGES_PER_AD', 6);
+define('MAX_IMAGE_BYTES', 5 * 1024 * 1024);
+define('MAX_FAILED_LOGINS', 5);
+define('LOCK_MINUTES', 15);
 
-define('AD_STATUS_PENDING', 'pending');
-define('AD_STATUS_APPROVED', 'approved');
-define('AD_STATUS_REJECTED', 'rejected');
-
-define('UPLOAD_DIR', __DIR__ . '/../storage/uploads');
-define('UPLOAD_URL', 'storage/uploads');
-
-define('DEFAULT_SETTINGS', serialize([
-    'fairness_band_percent' => 15,
-    'currency' => 'LKR',
-    'currency_symbol' => 'Rs',
-    'gemini_api_key' => '',
-    'gemini_model' => 'gemini-1.5-flash',
-    'site_contact_phone' => '+94 11 234 5678',
-    'site_contact_email' => 'support@autovalue.lk',
-    'allow_registration' => 1,
-    'ads_per_page' => 9,
+define('PROMO_PRICES', serialize([
+    'top_ad'   => 350.00,
+    'featured' => 750.00,
+    'urgent'   => 500.00,
 ]));
+
+define('UPLOAD_DIR', dirname(__DIR__) . '/public/uploads');
+define('UPLOAD_URL', 'uploads');

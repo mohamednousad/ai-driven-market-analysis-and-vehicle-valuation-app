@@ -1,95 +1,90 @@
 <?php
-require_once __DIR__ . '/../../config/database.php';
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../lib/AdRepository.php';
-
-require_role(ROLE_ADMIN);
-$assetBase = '../';
+require_once dirname(dirname(__DIR__)) . '/includes/bootstrap.php';
+Auth::requireRole('admin');
 
 $adRepo = new AdRepository($pdo);
+$analysisRepo = new AnalysisRepository($pdo);
+$notifRepo = new NotificationRepository($pdo);
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && verify_csrf()) {
-    $action = post('action');
-    $adId = (int)post('ad_id');
-    if ($action === 'approve') {
-        $adRepo->updateStatus($adId, AD_STATUS_APPROVED);
-        set_flash('success', 'Ad approved and published.');
-    } elseif ($action === 'reject') {
-        $adRepo->updateStatus($adId, AD_STATUS_REJECTED);
-        set_flash('success', 'Ad rejected.');
-    } elseif ($action === 'delete') {
-        $adRepo->delete($adId);
-        set_flash('success', 'Ad deleted.');
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrfVerify();
+    $adId = (int)($_POST['ad_id'] ?? 0);
+    $action = $_POST['action'] ?? '';
+    $sellerId = $adRepo->ownerOf($adId);
+
+    if ($sellerId !== null && in_array($action, ['approve', 'reject'], true)) {
+        if ($action === 'approve') {
+            $adRepo->setStatus($adId, 'approved');
+            $notifRepo->push($sellerId, $adId, 'Ad approved', 'Your ad is now live on AutoValue.', 'ad_approved');
+            flash('success', 'Ad approved and published.');
+        } else {
+            $adRepo->setStatus($adId, 'rejected');
+            $notifRepo->push($sellerId, $adId, 'Ad rejected', 'Your ad was rejected by the admin team.', 'ad_rejected');
+            flash('success', 'Ad rejected.');
+        }
     }
-    redirect('ads.php' . (query('status') ? '?status=' . urlencode(query('status')) : ''));
+    redirect('/admin/ads.php');
 }
 
-$status = query('status');
-$ads = $adRepo->allForAdmin($status);
-$statuses = ['' => 'All', 'pending' => 'Pending', 'approved' => 'Approved', 'rejected' => 'Rejected'];
+$showAll = isset($_GET['all']);
+$ads = $showAll ? $adRepo->allForAdmin() : $adRepo->pendingForAdmin();
 
-$pageTitle = 'Manage Ads';
-require_once __DIR__ . '/../../includes/header.php';
+$pageTitle = 'Review Ads';
+require dirname(dirname(__DIR__)) . '/includes/header.php';
 ?>
-<section class="section">
-    <span class="eyebrow">Moderation</span>
-    <h1 class="mb-0">Manage vehicle ads</h1>
-</section>
-
-<div class="tag-row" style="margin-bottom:20px">
-    <?php foreach ($statuses as $key => $label): ?>
-        <a href="ads.php<?php echo $key ? '?status=' . $key : ''; ?>"
-           class="btn <?php echo $status === $key ? 'primary' : 'secondary'; ?> small"><?php echo $label; ?></a>
-    <?php endforeach; ?>
-</div>
-
-<?php if (!$ads): ?>
-    <div class="card empty-state"><i class="fa-solid fa-inbox"></i><p>No ads in this category.</p></div>
-<?php else: ?>
-    <div class="table-card">
-        <table>
-            <thead><tr><th>Vehicle</th><th>Seller</th><th>Asking</th><th>Fair range</th><th>Status</th><th>Actions</th></tr></thead>
-            <tbody>
-            <?php foreach ($ads as $ad): ?>
-                <tr>
-                    <td>
-                        <strong><?php echo e($ad['title']); ?></strong>
-                        <div class="muted" style="font-size:13px"><?php echo e($ad['brand'] . ' · ' . $ad['model_year']); ?></div>
-                    </td>
-                    <td><?php echo e($ad['seller_name']); ?></td>
-                    <td><strong><?php echo format_money($ad['asking_price']); ?></strong></td>
-                    <td class="muted" style="font-size:13px"><?php echo $ad['lower_bound'] ? format_money($ad['lower_bound']) . ' – ' . format_money($ad['upper_bound']) : 'N/A'; ?></td>
-                    <td><span class="badge <?php echo status_badge_class($ad['status']); ?>"><?php echo ucfirst($ad['status']); ?></span></td>
-                    <td>
-                        <div class="flex" style="gap:6px">
-                            <?php if ($ad['status'] !== AD_STATUS_APPROVED): ?>
-                                <form method="POST" style="margin:0">
-                                    <?php echo csrf_field(); ?>
-                                    <input type="hidden" name="action" value="approve">
-                                    <input type="hidden" name="ad_id" value="<?php echo (int)$ad['id']; ?>">
-                                    <button class="btn success small" title="Approve"><i class="fa-solid fa-check"></i></button>
-                                </form>
-                            <?php endif; ?>
-                            <?php if ($ad['status'] !== AD_STATUS_REJECTED): ?>
-                                <form method="POST" style="margin:0">
-                                    <?php echo csrf_field(); ?>
-                                    <input type="hidden" name="action" value="reject">
-                                    <input type="hidden" name="ad_id" value="<?php echo (int)$ad['id']; ?>">
-                                    <button class="btn secondary small" title="Reject"><i class="fa-solid fa-xmark"></i></button>
-                                </form>
-                            <?php endif; ?>
-                            <form method="POST" style="margin:0" onsubmit="return confirm('Delete this ad permanently?');">
-                                <?php echo csrf_field(); ?>
-                                <input type="hidden" name="action" value="delete">
-                                <input type="hidden" name="ad_id" value="<?php echo (int)$ad['id']; ?>">
-                                <button class="btn danger small" title="Delete"><i class="fa-solid fa-trash"></i></button>
-                            </form>
-                        </div>
-                    </td>
-                </tr>
-            <?php endforeach; ?>
-            </tbody>
-        </table>
+<div class="container" style="padding-top:18px;padding-bottom:40px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+    <h1 style="font-size:20px"><?= $showAll ? 'All Ads' : 'Ads Pending Review' ?> (<?= count($ads) ?>)</h1>
+    <div>
+      <a class="btn btn-outline btn-sm" href="/admin/ads.php">Pending</a>
+      <a class="btn btn-outline btn-sm" href="/admin/ads.php?all=1">All ads</a>
     </div>
-<?php endif; ?>
-<?php require_once __DIR__ . '/../../includes/footer.php'; ?>
+  </div>
+
+  <?php if (!$ads): ?><div class="card">Nothing here right now.</div><?php endif; ?>
+
+  <table class="table">
+    <?php if ($ads): ?>
+    <tr><th>Ad</th><th>Seller</th><th>Price</th><th>AI analysis</th><th>Status</th><th>Actions</th></tr>
+    <?php endif; ?>
+    <?php foreach ($ads as $ad): ?>
+      <?php $an = $analysisRepo->latestForAd((int)$ad['ad_id']); ?>
+      <tr>
+        <td><a href="/ad.php?id=<?= (int)$ad['ad_id'] ?>"><?= e($ad['title']) ?></a><br>
+            <span style="color:var(--muted);font-size:12px"><?= e($ad['make']) ?> <?= e($ad['model']) ?> · <?= (int)$ad['manufacture_year'] ?> · <?= e($ad['district']) ?></span></td>
+        <td><?= e($ad['seller_name']) ?><br><?= posterBadge($ad['poster_type']) ?></td>
+        <td style="color:var(--price-green);font-weight:700"><?= money((float)$ad['price']) ?></td>
+        <td>
+          <?php if ($an): ?>
+            <span class="chip chip-approved"><?= e(ucfirst($an['result'])) ?></span><br>
+            <span style="font-size:12px;color:var(--muted)">
+              Predicted <?= money((float)$an['predicted_price']) ?><br>
+              Range <?= money((float)$an['lower_bound']) ?> - <?= money((float)$an['upper_bound']) ?><br>
+              Confidence <?= round((float)$an['confidence_score'] * 100) ?>%
+            </span>
+          <?php else: ?>
+            <span style="color:var(--muted)">No analysis</span>
+          <?php endif; ?>
+        </td>
+        <td><?= statusChip($ad['status']) ?></td>
+        <td>
+          <div class="actions">
+            <?php if ($ad['status'] === 'pending_review'): ?>
+              <form method="post"><?php echo csrfField(); ?>
+                <input type="hidden" name="ad_id" value="<?= (int)$ad['ad_id'] ?>">
+                <input type="hidden" name="action" value="approve">
+                <button class="btn btn-green btn-sm" type="submit">Approve</button>
+              </form>
+              <form method="post"><?php echo csrfField(); ?>
+                <input type="hidden" name="ad_id" value="<?= (int)$ad['ad_id'] ?>">
+                <input type="hidden" name="action" value="reject">
+                <button class="btn btn-danger btn-sm" type="submit">Reject</button>
+              </form>
+            <?php endif; ?>
+          </div>
+        </td>
+      </tr>
+    <?php endforeach; ?>
+  </table>
+</div>
+<?php require dirname(dirname(__DIR__)) . '/includes/footer.php'; ?>

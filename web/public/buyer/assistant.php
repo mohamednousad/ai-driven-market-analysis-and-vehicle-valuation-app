@@ -1,37 +1,75 @@
 <?php
-require_once __DIR__ . '/../../config/database.php';
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../lib/SettingsService.php';
-require_once __DIR__ . '/../../lib/GeminiChat.php';
+require_once dirname(dirname(__DIR__)) . '/includes/bootstrap.php';
+Auth::requireRole('buyer');
 
-require_role(ROLE_BUYER);
-$assetBase = '../';
-
-$settings = new SettingsService($pdo);
-$chat = new GeminiChat((string)$settings->get('gemini_api_key', ''), (string)$settings->get('gemini_model', 'gemini-1.5-flash'));
-$configured = $chat->isConfigured();
+$gemini = new GeminiChat();
 
 $pageTitle = 'AI Assistant';
-$pageScripts = ['assets/js/assistant.js'];
-require_once __DIR__ . '/../../includes/header.php';
+require dirname(dirname(__DIR__)) . '/includes/header.php';
 ?>
-<section class="section">
-    <span class="eyebrow">AI assistant</span>
-    <h1 class="mb-0">Your vehicle-buying assistant</h1>
-    <p>Tell the assistant your budget and what you need. It will help you shape a smart search.</p>
-</section>
-
-<?php if (!$configured): ?>
-    <div class="alert warn"><i class="fa-solid fa-triangle-exclamation"></i><span>The AI assistant isn't configured yet. An administrator can add a Gemini API key in Settings to enable it.</span></div>
-<?php endif; ?>
-
-<div class="chat-shell">
-    <div class="chat-log" id="chatLog">
-        <div class="chat-msg assistant">Hi! I'm your AutoValue assistant. Tell me your budget in LKR and what you're looking for — for example, "a fuel-efficient hybrid under 8 million for city driving".</div>
+<div class="container" style="max-width:720px;padding-top:18px;padding-bottom:40px">
+  <h1 style="font-size:20px;margin-bottom:6px">AutoValue AI Assistant</h1>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
+    Tell the assistant your budget and needs. It will help you decide which vehicle to search for.
+  </p>
+  <?php if (!$gemini->isConfigured()): ?>
+    <div class="alert alert-error">The assistant is not configured yet. Add your GEMINI_API_KEY in web/config/config.php.</div>
+  <?php endif; ?>
+  <div class="chat-box assistant-box">
+    <div class="chat-messages" id="assistant-messages">
+      <div class="msg msg-theirs">Hi! I am the AutoValue assistant. What is your budget in rupees, and how will you use the vehicle?</div>
     </div>
-    <div class="chat-input">
-        <input type="text" id="chatText" placeholder="Type your message..." <?php echo $configured ? '' : 'disabled'; ?>>
-        <button class="btn primary" id="chatSend" <?php echo $configured ? '' : 'disabled'; ?>><i class="fa-solid fa-paper-plane"></i></button>
-    </div>
+    <form class="chat-input" id="assistant-form">
+      <input type="text" id="assistant-input" maxlength="1000" placeholder="e.g. I have 8 million for a family hybrid" autocomplete="off">
+      <button type="submit"><i class="fa-solid fa-paper-plane"></i></button>
+    </form>
+  </div>
 </div>
-<?php require_once __DIR__ . '/../../includes/footer.php'; ?>
+<script>
+(function () {
+  var form = document.getElementById('assistant-form');
+  var input = document.getElementById('assistant-input');
+  var box = document.getElementById('assistant-messages');
+  var history = [];
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var text = input.value.trim();
+    if (!text) return;
+    append('msg-mine', text);
+    history.push({ role: 'user', text: text });
+    input.value = '';
+    var typing = document.createElement('div');
+    typing.className = 'msg-typing';
+    typing.textContent = 'Assistant is thinking...';
+    box.appendChild(typing);
+    box.scrollTop = box.scrollHeight;
+
+    fetch('/api/chat.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ history: history.slice(0, -1), message: text })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        typing.remove();
+        var reply = data.success ? data.text : data.message;
+        append('msg-theirs', reply);
+        if (data.success) history.push({ role: 'model', text: reply });
+      })
+      .catch(function () {
+        typing.remove();
+        append('msg-theirs', 'Could not reach the assistant. Try again.');
+      });
+  });
+
+  function append(cls, text) {
+    var div = document.createElement('div');
+    div.className = 'msg ' + cls;
+    div.textContent = text;
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+  }
+})();
+</script>
+<?php require dirname(dirname(__DIR__)) . '/includes/footer.php'; ?>

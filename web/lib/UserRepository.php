@@ -8,49 +8,39 @@ class UserRepository
         $this->pdo = $pdo;
     }
 
-    public function find(int $id): ?array
+    public function all(): array
     {
-        $stmt = $this->pdo->prepare('SELECT * FROM users WHERE id = ? LIMIT 1');
-        $stmt->execute([$id]);
-        return $stmt->fetch() ?: null;
+        return $this->pdo->query(
+            'SELECT u.user_id, u.full_name, u.email, u.role, u.poster_type, u.status, u.created_at, r.phone
+             FROM users u LEFT JOIN user_registration r ON r.user_id = u.user_id
+             ORDER BY u.created_at DESC LIMIT 300'
+        )->fetchAll();
     }
 
-    public function all(string $role = ''): array
+    public function setStatus(int $userId, string $status): void
     {
-        $sql = 'SELECT id, full_name, email, role, phone, is_active, created_at FROM users';
-        $params = [];
-        if ($role) {
-            $sql .= ' WHERE role = ?';
-            $params[] = $role;
+        if (!in_array($status, ['active', 'suspended', 'banned'], true)) {
+            return;
         }
-        $sql .= ' ORDER BY created_at DESC';
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute($params);
-        return $stmt->fetchAll();
+        $this->pdo->prepare('UPDATE users SET status = ? WHERE user_id = ? AND role <> 'admin'')
+            ->execute([$status, $userId]);
     }
 
-    public function setActive(int $id, int $active): void
+    public function setPosterType(int $userId, string $type): void
     {
-        $stmt = $this->pdo->prepare('UPDATE users SET is_active = ? WHERE id = ? AND role <> ?');
-        $stmt->execute([$active, $id, ROLE_ADMIN]);
+        if (!in_array($type, ['non_member', 'member', 'authorized_agent'], true)) {
+            return;
+        }
+        $this->pdo->prepare('UPDATE users SET poster_type = ? WHERE user_id = ?')->execute([$type, $userId]);
     }
 
-    public function delete(int $id): void
+    public function counts(): array
     {
-        $stmt = $this->pdo->prepare('DELETE FROM users WHERE id = ? AND role <> ?');
-        $stmt->execute([$id, ROLE_ADMIN]);
-    }
-
-    public function countByRole(string $role): int
-    {
-        $stmt = $this->pdo->prepare('SELECT COUNT(*) AS total FROM users WHERE role = ?');
-        $stmt->execute([$role]);
-        return (int)$stmt->fetch()['total'];
-    }
-
-    public function updateProfile(int $id, string $fullName, string $phone): void
-    {
-        $stmt = $this->pdo->prepare('UPDATE users SET full_name = ?, phone = ? WHERE id = ?');
-        $stmt->execute([$fullName, $phone, $id]);
+        $rows = $this->pdo->query('SELECT role, COUNT(*) AS c FROM users GROUP BY role')->fetchAll();
+        $out = ['admin' => 0, 'seller' => 0, 'buyer' => 0];
+        foreach ($rows as $r) {
+            $out[$r['role']] = (int)$r['c'];
+        }
+        return $out;
     }
 }

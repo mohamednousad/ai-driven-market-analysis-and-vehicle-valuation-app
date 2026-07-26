@@ -1,91 +1,113 @@
-# AutoValue AI — Setup Guide
+# AutoValue — AI-Driven Vehicle Marketplace
 
-AI-Driven Vehicle Marketplace for the CSE6035 Development Project. Buyers, sellers and an admin
-console, with an AI fair-price gate on every listing and a Gemini-powered buyer assistant.
+Final year project build. PHP (OOP) + MySQL web app, Python Flask AI microservice running a Decision Tree Regressor written completely from scratch (no ML libraries), and an optional Gemini buyer assistant.
 
-## Stack
-
-- Frontend: HTML, CSS, JavaScript, jQuery (CDN), FontAwesome (CDN)
-- Backend: PHP (PDO) + MySQL
-- AI service: Python Flask serving a pickle model (model-agnostic loader)
-
-## Folder structure
+## What is inside
 
 ```
-vehicle-app/
-├── ai_service/                 Flask AI microservice
-│   ├── app.py                  Endpoints: /health /schema /reload /predict
-│   ├── model_loader.py         Model-agnostic pickle loader
-│   ├── custom_regressor.py     Fallback classes for custom pickles
-│   ├── model/
-│   │   ├── feature_schema.json Vehicle feature schema
-│   │   └── vehicle_price_model.pkl  Drop your Kaggle model here
-│   └── export/                 Example of the expected bundle format
+autovalue/
+├── ai_service/
+│   ├── decision_tree.py        Decision Tree Regressor built from scratch
+│   ├── train.py                Trains the tree on car_price_dataset.csv
+│   ├── app.py                  Flask API: /health and /predict
+│   ├── model/model.json        Trained model (already trained, ready to serve)
+│   └── car_price_dataset.csv   9,788 Sri Lankan vehicle listings
 ├── database/
-│   └── schema.sql              Tables + seed data
+│   ├── schema.sql              16 tables + 25 district seed rows
+│   └── seed.php                Creates demo accounts (run once)
 └── web/
-    ├── config/                 config.php, database.php
-    ├── includes/               functions.php, auth.php, header.php, footer.php
-    ├── lib/                    Services and repositories (OOP)
-    ├── public/                 App entry (point your web root here)
-    │   ├── assets/css/js       Global reusable CSS + jQuery
-    │   ├── api/                JSON endpoints (valuate, chat)
-    │   ├── buyer/ seller/ admin/
-    │   ├── login.php register.php logout.php index.php
-    └── storage/uploads/        Uploaded vehicle images
+    ├── config/                 config.php (DB creds, AI URL, Gemini key), database.php
+    ├── includes/               bootstrap, helpers, header, footer
+    ├── lib/                    13 OOP classes (repositories and services)
+    └── public/                 Web root (point your server here)
 ```
 
-## 1. Database
+## Model performance (already trained on the included dataset)
 
-Import the schema (creates the `autovalue` database, tables and seed data):
+- Test R²: 0.845
+- Test MAE: Rs 673,780
+- 72.4% of test predictions within 15% of the actual price
+- Tree depth 12, 421 leaves, trained on 8,256 rows / tested on 1,457
+
+Retrain any time with `python train.py` inside `ai_service/`.
+
+## Setup (XAMPP or any LAMP stack)
+
+### 1. Database
 
 ```
-mysql -u root -p < database/schema.sql
+mysql -u root -p
+CREATE DATABASE autovalue CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+exit
+mysql -u root -p autovalue < database/schema.sql
 ```
 
-Update credentials in `web/config/config.php` if needed (`DB_USER`, `DB_PASS`).
+If your MySQL user or password differ from root with empty password, update `web/config/config.php`.
 
-## 2. AI service (Flask)
+### 2. Demo accounts
+
+```
+php database/seed.php
+```
+
+Password for every demo account: `password123`
+
+| Role | Email | Notes |
+| --- | --- | --- |
+| Admin | admin@autovalue.lk | Approves ads, manages users and reports |
+| Seller | seller@autovalue.lk | MEMBER badge |
+| Seller | agent@autovalue.lk | AUTHORIZED AGENT badge |
+| Buyer | buyer@autovalue.lk | Chat, favourites, ratings, assistant |
+
+### 3. AI service (start this before posting ads)
 
 ```
 cd ai_service
-python -m venv .venv && source .venv/bin/activate   # optional
 pip install -r requirements.txt
 python app.py
 ```
 
-The service runs on `http://127.0.0.1:5000`.
+Runs at http://127.0.0.1:5000. Check http://127.0.0.1:5000/health in a browser.
 
-### Using your own Kaggle model
-
-Export your trained model from your Kaggle notebook as a pickle bundle and save it as
-`ai_service/model/vehicle_price_model.pkl`. See `ai_service/export/kaggle_model_bundle_example.py`
-for the exact format. The loader accepts any bundle exposing a `model` with a `predict` (or
-`forward`) method, plus optional `feature_order`, `encoders`, `means`/`stds`, and `target_transform`.
-No retraining happens in the app. After replacing the file, either restart Flask or POST to `/reload`.
-
-The project ships with a working fallback model so the app runs before your model is added.
-
-## 3. Web app (PHP)
-
-Point your PHP server's web root at `web/public`:
+### 4. Web app
 
 ```
 cd web/public
 php -S 127.0.0.1:8000
 ```
 
-Open `http://127.0.0.1:8000`.
+Open http://127.0.0.1:8000
 
-## Demo accounts
+For XAMPP instead: place the project inside `htdocs` and point a virtual host document root at `autovalue/web/public`.
 
-Password for all seeded accounts: `password123`
+### 5. Optional: Gemini buyer assistant
 
-- Admin:  admin@autovalue.lk
-- Seller: seller@autovalue.lk
-- Buyer:  buyer@autovalue.lk
+Add your API key in `web/config/config.php`:
 
-## Settings module
+```
+define('GEMINI_API_KEY', 'your-key-here');
+```
 
-Log in as admin and open **Settings** to configure the fair-price band percent, the Gemini API key
-and model (enables the buyer AI assistant), currency, listings per page, and contact details.
+Without a key the app still runs; the assistant page simply shows a friendly notice.
+
+## How the AI price gate works
+
+1. Seller fills the post-ad form and submits.
+2. PHP calls the Flask `/predict` endpoint with brand, model, year, transmission, fuel, engine, mileage and feature count.
+3. The Decision Tree returns a predicted price plus a fair range built from the leaf standard deviation (minimum band 8% of the prediction) and a confidence score.
+4. If the asking price falls outside the range, the ad is blocked with a red verdict showing the predicted price and fair range. Nothing is saved.
+5. If the price is fair, the ad is created as pending_review, the analysis is stored in the `analysis` table, and the admin approves it to go live.
+
+Sellers can also press "Check fair price first" on the form for an instant AJAX check before submitting.
+
+## Feature checklist
+
+- Buyer, seller and admin roles with session auth, login attempt logging and 15 minute lockout after 5 failures
+- Post ad with up to 6 photos, MIME validation, transactional insert across ads, vehicles, vehicle_specifications and vehicle_images
+- AI fair-price gate with stored analysis rows and an "AI verified fair price" chip on live ads
+- ikman-style listing page: district sidebar, search, poster type filter, promoted filter, price range, sorting, pagination, FEATURED cream cards
+- Ad detail: gallery, phone reveal, MEMBER and AUTHORIZED AGENT badges, safety tips box, report modal, seller ratings
+- Buyer chat with sellers, favourites, seller ratings with upsert
+- Ad promotions (Top Ad, Featured, Urgent) with simulated payment and automatic expiry by date range
+- Admin dashboard, ad review queue with AI analysis shown, user management (status and poster type), report handling
+- Notifications with unread badge in the top bar

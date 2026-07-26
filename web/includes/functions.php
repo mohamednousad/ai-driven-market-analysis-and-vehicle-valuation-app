@@ -1,9 +1,12 @@
 <?php
-require_once __DIR__ . '/../config/config.php';
-
 function e(?string $value): string
 {
-    return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
+    return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+}
+
+function money(float $amount): string
+{
+    return CURRENCY_SYMBOL . ' ' . number_format($amount, 0);
 }
 
 function redirect(string $path): void
@@ -12,137 +15,75 @@ function redirect(string $path): void
     exit;
 }
 
-function base_url(string $path = ''): string
+function csrfToken(): string
 {
-    return $path;
-}
-
-function post(string $key, $default = '')
-{
-    return $_POST[$key] ?? $default;
-}
-
-function query(string $key, $default = '')
-{
-    return $_GET[$key] ?? $default;
-}
-
-function set_flash(string $type, string $message): void
-{
-    $_SESSION['flash'] = ['type' => $type, 'message' => $message];
-}
-
-function get_flash(): ?array
-{
-    if (!empty($_SESSION['flash'])) {
-        $flash = $_SESSION['flash'];
-        unset($_SESSION['flash']);
-        return $flash;
+    if (empty($_SESSION['csrf'])) {
+        $_SESSION['csrf'] = bin2hex(random_bytes(16));
     }
-    return null;
+    return $_SESSION['csrf'];
 }
 
-function csrf_token(): string
+function csrfField(): string
 {
-    if (empty($_SESSION['csrf_token'])) {
-        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    return '<input type="hidden" name="csrf" value="' . e(csrfToken()) . '">';
+}
+
+function csrfVerify(): void
+{
+    if (($_POST['csrf'] ?? '') !== ($_SESSION['csrf'] ?? null)) {
+        http_response_code(419);
+        exit('Invalid session token. Go back and try again.');
     }
-    return $_SESSION['csrf_token'];
 }
 
-function csrf_field(): string
+function flash(string $key, ?string $message = null): ?string
 {
-    return '<input type="hidden" name="csrf_token" value="' . csrf_token() . '">';
-}
-
-function verify_csrf(): bool
-{
-    $token = $_POST['csrf_token'] ?? '';
-    return is_string($token) && !empty($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token);
-}
-
-function json_response($data, int $status = 200): void
-{
-    http_response_code($status);
-    header('Content-Type: application/json');
-    echo json_encode($data);
-    exit;
-}
-
-function read_json_body(): array
-{
-    $raw = file_get_contents('php://input');
-    $decoded = json_decode($raw, true);
-    return is_array($decoded) ? $decoded : [];
-}
-
-function format_money($amount, string $symbol = 'Rs'): string
-{
-    return $symbol . ' ' . number_format((float)$amount, 0);
-}
-
-function time_ago(string $datetime): string
-{
-    $timestamp = strtotime($datetime);
-    $diff = time() - $timestamp;
-    if ($diff < 60) {
-        return 'just now';
+    if ($message !== null) {
+        $_SESSION['flash'][$key] = $message;
+        return null;
     }
-    $units = [
-        31536000 => 'year',
-        2592000 => 'month',
-        86400 => 'day',
-        3600 => 'hour',
-        60 => 'minute',
+    $value = $_SESSION['flash'][$key] ?? null;
+    unset($_SESSION['flash'][$key]);
+    return $value;
+}
+
+function timeAgo(string $datetime): string
+{
+    $diff = time() - strtotime($datetime);
+    if ($diff < 60) return 'just now';
+    if ($diff < 3600) return floor($diff / 60) . ' min ago';
+    if ($diff < 86400) return floor($diff / 3600) . ' hours ago';
+    if ($diff < 2592000) return floor($diff / 86400) . ' days ago';
+    return date('d M Y', strtotime($datetime));
+}
+
+function posterBadge(string $posterType): string
+{
+    if ($posterType === 'member') {
+        return '<span class="badge badge-member"><i class="fa-solid fa-circle-check"></i> MEMBER</span>';
+    }
+    if ($posterType === 'authorized_agent') {
+        return '<span class="badge badge-agent"><i class="fa-solid fa-shield-halved"></i> AUTHORIZED AGENT</span>';
+    }
+    return '';
+}
+
+function statusChip(string $status): string
+{
+    $map = [
+        'pending_review' => ['chip-pending', 'Pending review'],
+        'approved'       => ['chip-approved', 'Live'],
+        'rejected'       => ['chip-rejected', 'Rejected'],
+        'sold'           => ['chip-sold', 'Sold'],
     ];
-    foreach ($units as $seconds => $label) {
-        if ($diff >= $seconds) {
-            $count = floor($diff / $seconds);
-            return $count . ' ' . $label . ($count > 1 ? 's' : '') . ' ago';
-        }
-    }
-    return 'just now';
+    [$cls, $label] = $map[$status] ?? ['chip-pending', $status];
+    return '<span class="chip ' . $cls . '">' . e($label) . '</span>';
 }
 
-function status_badge_class(string $status): string
+function promoTag(?string $type): string
 {
-    switch ($status) {
-        case AD_STATUS_APPROVED:
-            return 'badge-approved';
-        case AD_STATUS_REJECTED:
-            return 'badge-rejected';
-        default:
-            return 'badge-pending';
-    }
-}
-
-function star_rating_html(float $rating): string
-{
-    $rating = max(0, min(5, $rating));
-    $full = (int)floor($rating);
-    $half = ($rating - $full) >= 0.5 ? 1 : 0;
-    $empty = 5 - $full - $half;
-    $html = '<span class="stars" title="' . number_format($rating, 1) . ' out of 5">';
-    $html .= str_repeat('<i class="fa-solid fa-star"></i>', $full);
-    if ($half) {
-        $html .= '<i class="fa-solid fa-star-half-stroke"></i>';
-    }
-    $html .= str_repeat('<i class="fa-regular fa-star"></i>', $empty);
-    $html .= '</span>';
-    return $html;
-}
-
-function old(string $key, $default = '')
-{
-    return e((string)($_SESSION['old'][$key] ?? $default));
-}
-
-function set_old(array $data): void
-{
-    $_SESSION['old'] = $data;
-}
-
-function clear_old(): void
-{
-    unset($_SESSION['old']);
+    if ($type === 'featured') return '<span class="promo-tag promo-featured">FEATURED</span>';
+    if ($type === 'urgent') return '<span class="promo-tag promo-urgent">URGENT</span>';
+    if ($type === 'top_ad') return '<span class="promo-tag promo-top">TOP AD</span>';
+    return '';
 }
