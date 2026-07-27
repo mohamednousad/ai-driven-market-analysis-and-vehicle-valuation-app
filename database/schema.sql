@@ -21,7 +21,7 @@ CREATE TABLE seller_profile (
   phone_number VARCHAR(20),
   date_of_birth DATE,
   avg_rating DECIMAL(2,1) DEFAULT 0.0,
-  response_rate DECIMAL(5,2) DEFAULT 0.00
+  response_rate DECIMAL(5,2) DEFAULT 0.00,
   gender ENUM('male','female','other'),
   profile_image VARCHAR(255),
   bio TEXT,
