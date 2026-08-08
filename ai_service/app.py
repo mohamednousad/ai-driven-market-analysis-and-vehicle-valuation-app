@@ -1,119 +1,153 @@
-import json
 import math
 import os
 
+import pandas as pd
 from flask import Flask, jsonify, request
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.preprocessing import LabelEncoder
 
-from decision_tree import DecisionTreeRegressor
+DATASET_PATH = os.path.join(os.path.dirname(__file__), "car_price_dataset.csv")
+FAIR_BAND_PCT = 0.18
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "model", "model.json")
 
+class FairPriceModel:
+    def __init__(self, csv_path):
+        self.csv_path = csv_path
+        self.classifier = None
+        self.brand_encoder = LabelEncoder()
+        self.model_encoder = LabelEncoder()
+        self.trans_encoder = LabelEncoder()
+        self.fuel_encoder = LabelEncoder()
+        self.feature_cols = ["brand", "model", "year", "engine_cc", "transmission", "fuel", "mileage", "price_lakhs"]
+        self.median_lookup = {}
+        self.global_median_lakhs = 0.0
+        self.train()
 
-class PriceModelService:
-    def __init__(self, model_path):
-        self.model_path = model_path
-        self.tree = None
-        self.encoder = None
-        self.meta = {}
-        self.load()
+    def train(self):
+        df = pd.read_csv(self.csv_path)
+        df = df.rename(columns={
+            "Brand": "brand", "Model": "model", "YOM": "year",
+            "Engine (cc)": "engine_cc", "Gear": "transmission",
+            "Fuel Type": "fuel", "Millage(KM)": "mileage", "Price": "price_lakhs",
+        })
+        df = df[["brand", "model", "year", "engine_cc", "transmission", "fuel", "mileage", "price_lakhs"]].dropna()
+        df = df[(df["price_lakhs"] > 5) & (df["price_lakhs"] < 5000)]
+        df["brand"] = df["brand"].astype(str).str.strip().str.upper()
+        df["model"] = df["model"].astype(str).str.strip().str.upper()
+        df["transmission"] = df["transmission"].astype(str).str.strip().str.lower()
+        df["fuel"] = df["fuel"].astype(str).str.strip().str.lower()
 
-    def load(self):
-        with open(self.model_path) as fh:
-            bundle = json.load(fh)
-        self.tree = DecisionTreeRegressor.from_dict(bundle["tree"])
-        self.encoder = bundle["encoder"]
-        self.meta = {
-            "model_type": bundle["model_type"],
-            "trained_rows": bundle["trained_rows"],
-            "test_r2": bundle["test_r2"],
-            "test_mae": bundle["test_mae"],
-            "feature_order": bundle["feature_order"],
-        }
+        grouped_median = df.groupby(["brand", "model", "year"])["price_lakhs"].median().reset_index()
+        grouped_median.columns = ["brand", "model", "year", "median_price"]
+        self.median_lookup = {(r["brand"], r["model"], int(r["year"])): float(r["median_price"]) for _, r in grouped_median.iterrows()}
+        self.global_median_lakhs = float(df["price_lakhs"].median())
 
-    def is_ready(self):
-        return self.tree is not None
+        df = df.merge(grouped_median, on=["brand", "model", "year"], how="left")
+        low = df["median_price"] * (1 - FAIR_BAND_PCT)
+        high = df["median_price"] * (1 + FAIR_BAND_PCT)
+        df["label"] = ((df["price_lakhs"] >= low) & (df["price_lakhs"] <= high)).astype(int)
 
-    def _encode(self, data):
-        enc = self.encoder
-        brand = str(data.get("brand", "")).strip().upper()
-        model = str(data.get("model", "")).strip().upper()
-        gear = str(data.get("transmission", "")).strip().title()
-        fuel = str(data.get("fuel_type", "")).strip().title()
-        yom = int(data.get("manufacture_year"))
-        engine = float(data.get("engine_cc", 0) or 0)
-        mileage = float(data.get("mileage_km", 0) or 0)
-        feature_count = int(data.get("feature_count", 0) or 0)
+        self.brand_encoder.fit(df["brand"].unique())
+        self.model_encoder.fit(df["model"].unique())
+        self.trans_encoder.fit(df["transmission"].unique())
+        self.fuel_encoder.fit(df["fuel"].unique())
 
-        brand_val = enc["brand_means"].get(brand, enc["global_mean"])
-        model_val = enc["model_means"].get(model, brand_val)
-        gear_val = enc["gear_map"].get(gear, 0.5)
-        fuel_val = enc["fuel_map"].get(fuel, enc["global_mean"])
-        age = float(enc["current_year"] - yom)
+        df["brand_e"] = self.brand_encoder.transform(df["brand"])
+        df["model_e"] = self.model_encoder.transform(df["model"])
+        df["trans_e"] = self.trans_encoder.transform(df["transmission"])
+        df["fuel_e"] = self.fuel_encoder.transform(df["fuel"])
 
-        return [
-            brand_val,
-            model_val,
-            age,
-            engine,
-            gear_val,
-            fuel_val,
-            math.log(mileage + 1.0),
-            float(feature_count),
-        ]
+        x = df[["brand_e", "model_e", "year", "engine_cc", "trans_e", "fuel_e", "mileage", "price_lakhs"]]
+        y = df["label"]
 
-    def predict(self, data):
-        x = self._encode(data)
-        predicted, leaf_std, leaf_n = self.tree.predict_one(x)
+        self.classifier = DecisionTreeClassifier(max_depth=10, min_samples_leaf=15, random_state=42)
+        self.classifier.fit(x, y)
+        print(f"[AutoValue AI] Model trained on {len(df)} rows.")
 
-        band = max(leaf_std, 0.08 * predicted)
-        lower = max(predicted - band, 0.0)
-        upper = predicted + band
+    def encode(self, encoder, value, default_value):
+        v = str(value).strip()
+        try:
+            return int(encoder.transform([v.upper() if encoder is self.brand_encoder or encoder is self.model_encoder else v.lower()])[0])
+        except Exception:
+            return default_value
 
-        spread_ratio = leaf_std / predicted if predicted > 0 else 1.0
-        confidence = max(0.30, min(0.99, 1.0 - spread_ratio))
+    def lookup_median(self, brand, model_name, year):
+        key = (brand.upper(), model_name.upper(), int(year))
+        if key in self.median_lookup:
+            return self.median_lookup[key]
+        matches = [v for (b, m, _y), v in self.median_lookup.items() if b == brand.upper() and m == model_name.upper()]
+        if matches:
+            return sum(matches) / len(matches)
+        brand_matches = [v for (b, _m, _y), v in self.median_lookup.items() if b == brand.upper()]
+        if brand_matches:
+            return sum(brand_matches) / len(brand_matches)
+        return self.global_median_lakhs
+
+    def predict(self, payload):
+        brand = str(payload.get("make", "")).strip()
+        model_name = str(payload.get("model", "")).strip()
+        year = int(payload.get("manufacture_year", 2015) or 2015)
+        engine_cc = float(payload.get("engine_cc", 1500) or 1500)
+        transmission = str(payload.get("transmission", "automatic")).strip().lower()
+        fuel = str(payload.get("fuel_type", "petrol")).strip().lower()
+        mileage = float(payload.get("mileage", 80000) or 80000)
+        price_lkr = float(payload.get("price", 0) or 0)
+        price_lakhs = price_lkr / 100000.0
+
+        brand_e = self.encode(self.brand_encoder, brand, 0)
+        model_e = self.encode(self.model_encoder, model_name, 0)
+        trans_e = self.encode(self.trans_encoder, transmission, 0)
+        fuel_e = self.encode(self.fuel_encoder, fuel, 0)
+
+        prediction = int(self.classifier.predict([[brand_e, model_e, year, engine_cc, trans_e, fuel_e, mileage, price_lakhs]])[0])
+        median_lakhs = self.lookup_median(brand, model_name, year)
+        low_lakhs = median_lakhs * (1 - FAIR_BAND_PCT)
+        high_lakhs = median_lakhs * (1 + FAIR_BAND_PCT)
+        low_lkr = low_lakhs * 100000.0
+        high_lkr = high_lakhs * 100000.0
+
+        is_fair = prediction == 1 and low_lkr <= price_lkr <= high_lkr
+        status = "fair" if is_fair else "not_fair"
+
+        def fmt(v):
+            m = v / 1_000_000.0
+            return f"LKR {m:.1f}M"
+
+        if is_fair:
+            result = f"Predicted fair range: {fmt(low_lkr)} - {fmt(high_lkr)}. Submitted price {fmt(price_lkr)} is within the market fair range."
+        elif price_lkr > high_lkr:
+            result = f"Predicted fair range: {fmt(low_lkr)} - {fmt(high_lkr)}. Submitted price {fmt(price_lkr)} is above the fair market range for this vehicle."
+        else:
+            result = f"Predicted fair range: {fmt(low_lkr)} - {fmt(high_lkr)}. Submitted price {fmt(price_lkr)} is below the fair market range for this vehicle."
 
         return {
-            "predicted_price": round(predicted, 2),
-            "lower_bound": round(lower, 2),
-            "upper_bound": round(upper, 2),
-            "confidence_score": round(confidence, 4),
-            "leaf_samples": leaf_n,
+            "fair_price_status": status,
+            "result": result,
+            "predicted_low": round(low_lkr, 2),
+            "predicted_high": round(high_lkr, 2),
+            "predicted_median": round(median_lakhs * 100000.0, 2),
+            "submitted_price": price_lkr,
+            "model": "DecisionTreeClassifier (temporary)",
         }
 
 
 app = Flask(__name__)
-service = PriceModelService(MODEL_PATH)
+service = FairPriceModel(DATASET_PATH)
 
 
-@app.after_request
-def allow_cors(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    return response
-
-
-@app.route("/health", methods=["GET"])
+@app.route("/health")
 def health():
-    return jsonify({"status": "running", "model_ready": service.is_ready(), "meta": service.meta})
+    return jsonify({"ok": True, "model": "DecisionTreeClassifier"})
 
 
-@app.route("/predict", methods=["POST", "OPTIONS"])
+@app.route("/predict", methods=["POST"])
 def predict():
-    if request.method == "OPTIONS":
-        return ("", 204)
+    payload = request.get_json(silent=True) or {}
     try:
-        payload = request.get_json(force=True)
-        inputs = payload.get("inputs", payload)
-        required = ("brand", "model", "manufacture_year", "transmission", "fuel_type")
-        missing = [k for k in required if not str(inputs.get(k, "")).strip()]
-        if missing:
-            return jsonify({"success": False, "message": "Missing fields: " + ", ".join(missing)}), 400
-        result = service.predict(inputs)
-        return jsonify({"success": True, "prediction": result})
-    except Exception as error:
-        return jsonify({"success": False, "message": str(error)}), 400
+        return jsonify(service.predict(payload))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000)
+    app.run(host="127.0.0.1", port=5000, debug=False)
