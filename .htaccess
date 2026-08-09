@@ -1,2 +1,4 @@
 RewriteEngine On
-RewriteRule ^$ web/ [L,R=302]
+RewriteBase /ai-driven-market-analysis-and-vehicle-valuation-app/
+
+RewriteRule ^$ web/index.php [L,R=302]
