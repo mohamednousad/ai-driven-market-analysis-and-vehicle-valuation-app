@@ -12,7 +12,7 @@ class AdModel extends BaseModel
         JOIN locations l ON l.id = a.location_id
         JOIN users u ON u.id = a.seller_id
         LEFT JOIN seller_profile sp ON sp.user_id = a.seller_id
-        LEFT JOIN ad_system_analysis an ON an.ad_id = a.id";
+        LEFT JOIN ad_system_analysis an ON an.id = (SELECT MAX(x.id) FROM ad_system_analysis x WHERE x.ad_id = a.id)";
 
     public function approvedList(array $filters, int $limit, int $offset): array
     {
@@ -109,9 +109,14 @@ class AdModel extends BaseModel
         );
     }
 
-    public function updateImagePath(int $imageId, string $path): void
+    public function updateImage(int $imageId, string $path, string $format): void
     {
-        $this->db->execute('UPDATE vehicle_images SET image_path = ? WHERE id = ?', [$path, $imageId]);
+        $this->db->execute('UPDATE vehicle_images SET image_path = ?, file_format = ? WHERE id = ?', [$path, $format, $imageId]);
+    }
+
+    public function deleteImage(int $imageId): void
+    {
+        $this->db->execute('DELETE FROM vehicle_images WHERE id = ?', [$imageId]);
     }
 
     public function saveAnalysis(int $adId, float $price, string $status, string $result): void

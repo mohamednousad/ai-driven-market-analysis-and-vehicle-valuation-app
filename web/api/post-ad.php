@@ -27,16 +27,20 @@ $v->required('title', $fields['title'], 'Title')->min('title', $fields['title'],
   ->required('manufacture_year', $fields['manufacture_year'], 'Manufacture year')->numeric('manufacture_year', $fields['manufacture_year'], 'Manufacture year')
   ->required('engine_cc', $fields['engine_cc'], 'Engine capacity')->numeric('engine_cc', $fields['engine_cc'], 'Engine capacity')
   ->required('mileage', $fields['mileage'], 'Mileage')->numeric('mileage', $fields['mileage'], 'Mileage');
-if ((float)$fields['price'] <= 0 && is_numeric($fields['price'])) {
-    $v->inList('price', 'invalid', ['valid'], 'Price');
+$errors = [];
+if (is_numeric($fields['price']) && (float)$fields['price'] <= 0) {
+    $errors['price'] = 'Price must be greater than zero.';
 }
 $year = (int)$fields['manufacture_year'];
 if ($year && ($year < 1980 || $year > (int)date('Y') + 1)) {
-    $errors = $v->errors();
     $errors['manufacture_year'] = 'Manufacture year looks invalid.';
 }
-if (!$v->passes() || isset($errors)) {
-    Helpers::json(['ok' => false, 'errors' => array_merge($v->errors(), $errors ?? [])], 422);
+$regYear = (int)($fields['registration_year'] ?: $year);
+if ($regYear && ($regYear < 1980 || $regYear > (int)date('Y') + 1 || ($year && $regYear < $year))) {
+    $errors['registration_year'] = 'Registration year looks invalid.';
+}
+if (!$v->passes() || $errors) {
+    Helpers::json(['ok' => false, 'errors' => array_merge($v->errors(), $errors)], 422);
 }
 $adModel = new AdModel();
 $adId = $adModel->createWithVehicle((int)Auth::id(), [
@@ -49,7 +53,7 @@ $adId = $adModel->createWithVehicle((int)Auth::id(), [
     'make' => $fields['make'],
     'model' => $fields['model'],
     'manufacture_year' => $year,
-    'registration_year' => (int)($fields['registration_year'] ?: $year),
+    'registration_year' => $regYear,
     'body_type' => Helpers::post('body_type'),
     'transmission' => in_array(Helpers::post('transmission'), ['manual', 'automatic'], true) ? Helpers::post('transmission') : 'automatic',
     'fuel_type' => in_array(Helpers::post('fuel_type'), ['petrol', 'diesel', 'hybrid', 'electric'], true) ? Helpers::post('fuel_type') : 'petrol',
@@ -80,7 +84,9 @@ if (!empty($_FILES['images']) && is_array($_FILES['images']['name'])) {
         $imageId = $adModel->addImage((int)$vehicle['id'], '', $i === $primaryIndex, (int)$file['size'], '');
         $upload = FileUploader::saveImage($file, 'uploads/ads/' . $adId . '/vehicle_images', (string)$imageId);
         if ($upload['ok']) {
-            $adModel->updateImagePath($imageId, $upload['path']);
+            $adModel->updateImage($imageId, $upload['path'], $upload['format']);
+        } else {
+            $adModel->deleteImage($imageId);
         }
     }
 }

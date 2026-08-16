@@ -8,6 +8,7 @@ final class Session
                 'httponly' => true,
                 'samesite' => 'Lax',
                 'path' => '/',
+                'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
             ]);
             session_start();
         }

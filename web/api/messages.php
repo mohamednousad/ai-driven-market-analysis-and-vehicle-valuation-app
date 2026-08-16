@@ -23,6 +23,9 @@ if ($action === 'send') {
     if (!$chat) {
         Helpers::json(['ok' => false, 'error' => 'Chat not found.'], 404);
     }
+    if (($chat['status'] ?? '') === 'closed') {
+        Helpers::json(['ok' => false, 'error' => 'This chat has been closed.'], 422);
+    }
     $message = trim(Helpers::post('message'));
     if ($message === '' || mb_strlen($message) > 2000) {
         Helpers::json(['ok' => false, 'error' => 'Message must be between 1 and 2000 characters.'], 422);

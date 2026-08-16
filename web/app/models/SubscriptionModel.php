@@ -24,6 +24,7 @@ class SubscriptionModel extends BaseModel
 
     public function activate(int $userId, array $plan): int
     {
+        $this->db->execute("UPDATE subscriptions SET status = 'cancelled' WHERE user_id = ? AND status = 'active'", [$userId]);
         $subId = $this->db->insert(
             "INSERT INTO subscriptions (user_id, plan_id, start_date, end_date, status) VALUES (?, ?, CURDATE(), DATE_ADD(CURDATE(), INTERVAL ? DAY), 'active')",
             [$userId, (int)$plan['id'], (int)$plan['duration']]

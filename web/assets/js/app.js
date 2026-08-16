@@ -86,6 +86,15 @@ var AV = (function ($) {
         });
     }
 
+    function gatewaySubmit(gateway) {
+        var $form = $('<form method="post"></form>').attr('action', gateway.action).css('display', 'none');
+        $.each(gateway.fields || {}, function (name, value) {
+            $form.append($('<input type="hidden">').attr('name', name).val(value));
+        });
+        $('body').append($form);
+        $form.trigger('submit');
+    }
+
     function setLoading($btn, on) {
         if (on) {
             $btn.addClass('loading').prop('disabled', true);
@@ -181,7 +190,11 @@ var AV = (function ($) {
             $stars.each(function (i) { $(this).toggleClass('filled', i <= idx); });
             if (e.type === 'click') $(this).parent().data('value', idx + 1).attr('data-value', idx + 1);
         });
+        $('.rating-stars').on('mouseleave', function () {
+            var value = parseInt($(this).attr('data-value') || '0', 10);
+            $(this).find('i').each(function (i) { $(this).toggleClass('filled', i < value); });
+        });
     });
 
-    return { toast: toast, modal: modal, confirm: confirmAction, ajax: ajax, setLoading: setLoading, showFieldErrors: showFieldErrors, base: base, csrf: csrf };
+    return { toast: toast, modal: modal, confirm: confirmAction, ajax: ajax, setLoading: setLoading, showFieldErrors: showFieldErrors, gatewaySubmit: gatewaySubmit, base: base, csrf: csrf };
 })(jQuery);

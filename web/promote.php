@@ -79,6 +79,7 @@ $('.js-promo').on('click', function () {
   AV.confirm('Apply ' + label + ' boost?', confirmText, function () {
     AV.setLoading(btn, true);
     AV.ajax('api/pay.php', { type: 'promotion', ad_id: adId, promo_type: btn.data('type'), mode: mode }, function (res) {
+      if (res.payhere) { AV.gatewaySubmit(res.payhere); return; }
       if (res.redirect) { window.location = res.redirect; return; }
       AV.setLoading(btn, false);
       AV.toast('success', res.message || 'Promotion applied.');

@@ -1,11 +1,11 @@
 <?php
 class PaymentModel extends BaseModel
 {
-    public function create(int $userId, string $category, float $amount, string $method, ?int $subscriptionId = null): int
+    public function create(int $userId, string $category, float $amount, string $method, array $meta = [], ?int $subscriptionId = null): int
     {
         return $this->db->insert(
-            "INSERT INTO payments (user_id, subscription_id, category, amount, method, status) VALUES (?, ?, ?, ?, ?, 'pending')",
-            [$userId, $subscriptionId, $category, $amount, $method]
+            "INSERT INTO payments (user_id, subscription_id, category, amount, method, meta, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')",
+            [$userId, $subscriptionId, $category, $amount, $method, json_encode($meta)]
         );
     }
 

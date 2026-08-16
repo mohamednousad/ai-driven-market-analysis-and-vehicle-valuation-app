@@ -84,6 +84,7 @@ $('.js-buy-plan').on('click', function () {
   AV.confirm('Subscribe to ' + planName + '?', 'You will be charged ' + planPrice + ' for 30 days of benefits.', function () {
     AV.setLoading(btn, true);
     AV.ajax('api/pay.php', { type: 'subscription', plan_id: btn.data('plan') }, function (res) {
+      if (res.payhere) { AV.gatewaySubmit(res.payhere); return; }
       if (res.redirect) { window.location = res.redirect; return; }
       AV.setLoading(btn, false);
     }, function (msg) {
