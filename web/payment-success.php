@@ -1,10 +1,11 @@
 <?php
 require_once __DIR__ . '/app/bootstrap.php';
 Auth::requireLogin();
+$gateway = PaymentGatewayFactory::create('payhere');
 $userId = (int)Auth::id();
 $paymentId = (int)Helpers::get('payment_id', '0');
 if (!$paymentId && Helpers::get('order_id')) {
-    $paymentId = PayHereClient::paymentIdFromOrder(Helpers::get('order_id'));
+    $paymentId = $gateway->paymentIdFromOrder(Helpers::get('order_id'));
 }
 $paymentModel = new PaymentModel();
 $payment = $paymentModel->find($paymentId);
@@ -23,10 +24,10 @@ if ($payment['status'] === 'failed') {
 $demo = Helpers::get('demo') === '1';
 $transactionId = '';
 $verified = false;
-if ($demo && !PayHereClient::enabled()) {
+if ($demo && !$gateway->enabled()) {
     $verified = true;
     $transactionId = 'DEMO_' . strtoupper(bin2hex(random_bytes(6)));
-} elseif (PayHereClient::enabled()) {
+} elseif ($gateway->enabled()) {
     $fresh = $paymentModel->find($paymentId);
     if ($fresh['status'] === 'completed') {
         Flash::success('Payment confirmed. Thank you!');
@@ -34,7 +35,7 @@ if ($demo && !PayHereClient::enabled()) {
     }
     if (Config::get('PAYHERE_TRUST_RETURN')) {
         $verified = true;
-        $transactionId = PayHereClient::orderId($paymentId);
+        $transactionId = $gateway->orderId($paymentId);
     }
 }
 if (!$verified) {

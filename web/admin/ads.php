@@ -3,7 +3,6 @@ require_once dirname(__DIR__) . '/app/bootstrap.php';
 Auth::requireAdmin();
 $pageTitle = 'Ads Moderation';
 $adModel = new AdModel();
-$notif = new NotificationModel();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     Auth::requireCsrf();
     $adId = (int)Helpers::post('ad_id');
@@ -11,12 +10,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $ad = $adModel->findFull($adId);
     if ($ad) {
         if ($action === 'approve') {
-            $adModel->setStatus($adId, 'approved');
-            $notif->push((int)$ad['seller_id'], 'Ad Approved', 'Admin has approved your ad "' . $ad['title'] . '".', 'ad', $adId);
+            $adModel->changeStatus($adId, 'approved', (int)$ad['seller_id'], (string)$ad['title']);
             Flash::success('Ad approved.');
         } elseif ($action === 'reject') {
-            $adModel->setStatus($adId, 'rejected');
-            $notif->push((int)$ad['seller_id'], 'Ad Rejected', 'Admin removed your ad "' . $ad['title'] . '" from the marketplace.', 'ad', $adId);
+            $adModel->changeStatus($adId, 'rejected', (int)$ad['seller_id'], (string)$ad['title']);
             Flash::warning('Ad rejected.');
         } elseif ($action === 'delete') {
             $adModel->delete($adId, (int)$ad['seller_id']);

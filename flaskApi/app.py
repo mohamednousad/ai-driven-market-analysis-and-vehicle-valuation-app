@@ -3,6 +3,7 @@ import os
 from flask import Flask, jsonify, request
 
 import tree
+from strategies import MedianBandStrategy, DecisionTreeStrategy, CombinedValuationStrategy
 
 
 def get_model():
@@ -17,6 +18,11 @@ def get_model():
 
 app = Flask(__name__)
 service = get_model()
+
+# Strategy pattern: the endpoint depends on this interface, not on the
+# individual checks. Swap or reorder strategies here without touching predict().
+valuation = CombinedValuationStrategy([DecisionTreeStrategy(), MedianBandStrategy()])
+
 print(f"[AutoValue AI] Decision tree ready ({service['trained_rows']} training rows).")
 
 
@@ -51,8 +57,17 @@ def predict():
         band = service["fair_band_pct"]
         low_lkr = median_lakhs * (1 - band) * 100000.0
         high_lkr = median_lakhs * (1 + band) * 100000.0
-        in_band = low_lkr <= price_lkr <= high_lkr
-        is_fair = prediction == 1 and in_band
+
+        # Delegate the fair/not-fair decision to the Strategy objects.
+        context = {
+            "price_lkr": price_lkr,
+            "low_lkr": low_lkr,
+            "high_lkr": high_lkr,
+            "prediction": prediction,
+            "confidence": confidence,
+        }
+        outcome = valuation.evaluate(context)
+        is_fair = outcome["fair"]
         status = "fair" if is_fair else "not_fair"
 
         if is_fair:

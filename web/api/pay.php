@@ -14,7 +14,8 @@ function payhereResponse(int $paymentId, string $itemName, float $amount, string
 {
     $user = Auth::user() ?? [];
     $profile = (new SellerProfileModel())->findByUserId((int)$user['id']) ?? [];
-    $checkout = PayHereClient::buildCheckout(
+    $gateway = PaymentGatewayFactory::create('payhere');
+    $checkout = $gateway->buildCheckout(
         $paymentId,
         $itemName,
         $amount,
@@ -42,8 +43,8 @@ if ($type === 'subscription') {
     if (!(new SellerProfileModel())->findByUserId($userId)) {
         (new SellerProfileModel())->createOrUpdate($userId, ['phone_number' => null, 'date_of_birth' => null, 'gender' => null, 'bio' => null, 'address' => null, 'city' => null, 'district' => null, 'province' => null, 'postal_code' => null]);
     }
-    $paymentId = $paymentModel->create($userId, 'subscription', (float)$plan['price'], PayHereClient::enabled() ? 'payhere' : 'demo', ['plan_id' => (int)$plan['id']]);
-    if (PayHereClient::enabled()) {
+    $paymentId = $paymentModel->create($userId, 'subscription', (float)$plan['price'], PaymentGatewayFactory::create('payhere')->enabled() ? 'payhere' : 'demo', ['plan_id' => (int)$plan['id']]);
+    if (PaymentGatewayFactory::create('payhere')->enabled()) {
         payhereResponse($paymentId, 'AutoValue ' . $plan['name'], (float)$plan['price'], $host);
     }
     Helpers::json(['ok' => true, 'redirect' => $host . Config::baseUrl('payment-success.php?payment_id=' . $paymentId . '&demo=1')]);
@@ -74,8 +75,8 @@ if ($type === 'promotion') {
         (new NotificationModel())->push($userId, 'Promotion Active', 'Your free ' . str_replace('_', ' ', $promoType) . ' promotion is now live.', 'payment', $adId);
         Helpers::json(['ok' => true, 'message' => 'Free promotion applied. Your ad is now boosted!']);
     }
-    $paymentId = $paymentModel->create($userId, 'promotion', $price, PayHereClient::enabled() ? 'payhere' : 'demo', ['ad_id' => $adId, 'promo_type' => $promoType]);
-    if (PayHereClient::enabled()) {
+    $paymentId = $paymentModel->create($userId, 'promotion', $price, PaymentGatewayFactory::create('payhere')->enabled() ? 'payhere' : 'demo', ['ad_id' => $adId, 'promo_type' => $promoType]);
+    if (PaymentGatewayFactory::create('payhere')->enabled()) {
         payhereResponse($paymentId, 'AutoValue ' . ucfirst(str_replace('_', ' ', $promoType)) . ' Promotion', $price, $host);
     }
     Helpers::json(['ok' => true, 'redirect' => $host . Config::baseUrl('payment-success.php?payment_id=' . $paymentId . '&demo=1')]);

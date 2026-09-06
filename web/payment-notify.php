@@ -4,11 +4,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     exit;
 }
-if (!PayHereClient::enabled() || !PayHereClient::verifyNotify($_POST)) {
+$gateway = PaymentGatewayFactory::create('payhere');
+if (!$gateway->enabled() || !$gateway->verifyNotify($_POST)) {
     http_response_code(400);
     exit;
 }
-$paymentId = PayHereClient::paymentIdFromOrder((string)$_POST['order_id']);
+$paymentId = $gateway->paymentIdFromOrder((string)$_POST['order_id']);
 $payment = (new PaymentModel())->find($paymentId);
 if (!$payment) {
     http_response_code(404);
@@ -21,7 +22,7 @@ if ($statusCode === 2) {
         http_response_code(400);
         exit;
     }
-    PaymentFulfillment::complete($payment, (string)($_POST['payment_id'] ?? PayHereClient::orderId($paymentId)));
+    PaymentFulfillment::complete($payment, (string)($_POST['payment_id'] ?? $gateway->orderId($paymentId)));
 } elseif (in_array($statusCode, [-1, -2, -3], true) && $payment['status'] === 'pending') {
     (new PaymentModel())->fail($paymentId);
 }

@@ -136,6 +136,27 @@ class AdModel extends BaseModel
         }
     }
 
+    /**
+     * Build the Observer subject with the default observers attached.
+     * Kept as a factory method so call sites can reuse it or add their own observers.
+     */
+    public function statusSubject(): AdStatusSubject
+    {
+        $subject = new AdStatusSubject();
+        $subject->attach(new NotificationObserver());
+        return $subject;
+    }
+
+    /**
+     * Change an ad's status AND broadcast the change through the Observer pattern.
+     * The model no longer needs to know how notifications are delivered.
+     */
+    public function changeStatus(int $adId, string $status, int $sellerId, string $title, string $detail = ''): void
+    {
+        $this->setStatus($adId, $status);
+        $this->statusSubject()->notify($adId, $sellerId, $status, $title, $detail);
+    }
+
     public function updatePrice(int $adId, float $price): void
     {
         $this->db->execute("UPDATE ads SET price = ?, status = 'pending' WHERE id = ?", [$price, $adId]);

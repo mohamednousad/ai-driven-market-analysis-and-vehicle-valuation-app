@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $adModel->delete($adId, $userId);
         Flash::success('Ad deleted successfully.');
     } elseif ($action === 'mark_sold') {
-        $adModel->setStatus($adId, 'sold');
+        $adModel->changeStatus($adId, 'sold', $userId, (string)$owned['title']);
         Flash::success('Congratulations on the sale! Ad marked as sold.');
     } elseif ($action === 'update_price') {
         $newPrice = (float)Helpers::post('price');
